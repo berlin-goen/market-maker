@@ -27,7 +27,10 @@ const buyMXY = async (mxyAmount, mxyPrice) => {
         '0', 
         [process.env.BUSD_ADDRESS, process.env.MXY_ADDRESS], 
         wallet.address, 
-        '1000000000000'
+        '1000000000000',
+        {
+            gasPrice: process.env.GAS_PRICE
+        }
     )).wait()
 }
 
@@ -38,7 +41,10 @@ const sellMXY = async (mxyAmount) => {
         '0', 
         [process.env.MXY_ADDRESS, process.env.BUSD_ADDRESS], 
         wallet.address, 
-        '1000000000000'
+        '1000000000000',
+        {
+            gasPrice: process.env.GAS_PRICE
+        }
     )).wait()
 }
 
@@ -49,7 +55,7 @@ const main = async () => {
 
     //Kiểm tra giá so với mức hỗ trợ
     if (currentPrice < SUPPORTING_PRICE) {
-        console.log(`Buying at price MXY/BUSD: ${currentPrice} with amount ${process.env.BUYING_AMOUNT} BUSD`)
+        console.log(`Buying at price MXY/BUSD: ${currentPrice} with amount ${process.env.BUYING_AMOUNT} MXY`)
         //Mua vào
         await buyMXY(process.env.BUYING_AMOUNT, currentPrice)
         //Lấy lại giá
