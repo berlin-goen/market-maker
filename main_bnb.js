@@ -1,5 +1,7 @@
 const ethers = require('ethers')
-const PRIVATE_KEYS = require('./secrets')
+const PRIVATE_KEYS = require('./bnb_secrets')
+const Web3 = require('web3')
+
 require('dotenv').config()
 
 const abi = require('./abi')
@@ -15,34 +17,58 @@ const getMxyWBNBPrice = async (WBNB, MXY) => {
     return ethers.utils.formatEther(weiPrice)
 }
 
-const buyMXY = async (mxyAmount, mxyPrice, PANCAKE_ROUTER, wallet) => {
+const buyMXY = async (mxyAmount, mxyPrice, private_key) => {
+    const web3 = new Web3(process.env.PROVIDER_RPC)
+    const wallet = await web3.eth.accounts.privateKeyToAccount(private_key)
+    await web3.eth.accounts.wallet.add(wallet)
+    const PANCAKE_ROUTER = new web3.eth.Contract(abi.PANCAKE_ROUTER, process.env.PANCAKE_ROUTER_ADDRESS)
+    
     const wbnbAmount = mxyPrice*mxyAmount
-    console.log(`bnb amount to swap ${wbnbAmount}`)
+    console.log(`BNB amount to swap ${wbnbAmount}`)
     const wbnbAmountInWei = ethers.utils.parseUnits(wbnbAmount.toString(), 'ether')
-    await (await PANCAKE_ROUTER.swapExactETHForTokens(
+    
+    let tx = PANCAKE_ROUTER.methods.swapExactETHForTokens(
         '0', 
         [process.env.WBNB_ADDRESS, process.env.MXY_ADDRESS], 
         wallet.address, 
-        '1000000000000',
-        {
-            value: wbnbAmountInWei,
-            gasPrice: process.env.GAS_PRICE
-        }
-    )).wait()
+        '1000000000000'
+    ).send({
+        from: wallet.address,
+        value: wbnbAmountInWei.toString(),
+        gas: 9000000,
+        gasPrice: (await web3.eth.getGasPrice())*2,
+        nonce: await web3.eth.getTransactionCount(wallet.address)
+    })
+    return new Promise((resolve, reject) => {
+        tx.on('receipt', resolve)
+        tx.on('error', reject )
+    })
 }
 
-const sellMXY = async (mxyAmount, PANCAKE_ROUTER, wallet) => {
+const sellMXY = async (mxyAmount, private_key) => {
+    const web3 = new Web3(process.env.PROVIDER_RPC)
+    const wallet = await web3.eth.accounts.privateKeyToAccount(private_key)
+    await web3.eth.accounts.wallet.add(wallet)
+    const PANCAKE_ROUTER = new web3.eth.Contract(abi.PANCAKE_ROUTER, process.env.PANCAKE_ROUTER_ADDRESS)
+
     const mxyAmountInWei = ethers.utils.parseUnits(mxyAmount, 'ether')
-    await (await PANCAKE_ROUTER.swapExactTokensForETH(
-        mxyAmountInWei, 
+
+    let tx = PANCAKE_ROUTER.methods.swapExactTokensForETH(
+        mxyAmountInWei.toString(), 
         '0', 
         [process.env.MXY_ADDRESS, process.env.WBNB_ADDRESS], 
         wallet.address, 
-        '1000000000000',
-        {
-            gasPrice: process.env.GAS_PRICE
-        }
-    )).wait()
+        '1000000000000'
+    ).send({
+        from: wallet.address,
+        gas: 9000000,
+        gasPrice: (await web3.eth.getGasPrice())*2,
+        nonce: await web3.eth.getTransactionCount(wallet.address)
+    })
+    return new Promise((resolve, reject) => {
+        tx.on('receipt', resolve)
+        tx.on('error', reject )
+    })
 }
 
 const trade = async (private_key) => {
@@ -50,7 +76,6 @@ const trade = async (private_key) => {
 
     const WBNB = new ethers.Contract(process.env.WBNB_ADDRESS, abi.BEP20, wallet)
     const MXY = new ethers.Contract(process.env.MXY_ADDRESS, abi.BEP20, wallet)
-    const PANCAKE_ROUTER = new ethers.Contract(process.env.PANCAKE_ROUTER_ADDRESS, abi.PANCAKE_ROUTER, wallet)
     const BNB_SUPPORTING_PRICE = parseFloat(process.env.BNB_SUPPORTING_PRICE)
     //Lấy giá của token
     let currentPrice = await getMxyWBNBPrice(WBNB, MXY)
@@ -59,7 +84,7 @@ const trade = async (private_key) => {
     if (currentPrice < BNB_SUPPORTING_PRICE) {
         console.log(`${wallet.address} - Buying at price MXY/BNB: ${currentPrice} with amount ${process.env.BNB_SELLING_AMOUNT} MXY`)
         //Mua vào
-        await buyMXY(process.env.BNB_BUYING_AMOUNT, currentPrice, PANCAKE_ROUTER, wallet)
+        await buyMXY(process.env.BNB_BUYING_AMOUNT, currentPrice, private_key)
         //Lấy lại giá
         currentPrice = await getMxyWBNBPrice(WBNB, MXY)
     }
@@ -67,7 +92,7 @@ const trade = async (private_key) => {
     if (currentPrice > BNB_SUPPORTING_PRICE) {
         console.log(`${wallet.address} - Selling at price MXY/BNB: ${currentPrice} with amount ${process.env.BNB_BUYING_AMOUNT} MXY`)
         //Bán ra
-        await sellMXY(process.env.BNB_SELLING_AMOUNT, PANCAKE_ROUTER, wallet)
+        await sellMXY(process.env.BNB_SELLING_AMOUNT, private_key)
         currentPrice = await getMxyWBNBPrice(WBNB, MXY)
     }
     console.log(`${wallet.address} - Done at price MXY/BNB: ${currentPrice}`)
@@ -84,7 +109,7 @@ const main = async function() {
         } catch (e) {
             console.log(e)
         }
-        await delay(60000)
+        await delay(5000)
         PID++
     }
 }
